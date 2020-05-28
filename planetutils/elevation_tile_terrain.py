@@ -9,24 +9,6 @@ import multiprocessing
 CPU_COUNT = multiprocessing.cpu_count()
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--inpath', help='Location of input elevation tiles (TIF).', default='.')
-    parser.add_argument('--outpath', help='Output path for elevation tiles.', default='.')
-    parser.add_argument('--processing', help='DEM process.', default='hillshade')
-    parser.add_argument('--format', help='Download format', default='jpeg')
-
-    args = parser.parse_args()
-
-    job = ElevationDEM(in_path=args.inpath, out_path=args.outpath, processing=args.processing,
-                       out_format=args.format)
-    job.generate()
-
-
-if __name__ == '__main__':
-    main()
-
-
 class ElevationDEM:
 
     def __init__(self, processing='hillshade',
@@ -50,7 +32,7 @@ class ElevationDEM:
             path = root.split(os.sep)
             for file in files:
                 if '.tif' in file:
-                    found_tiles.add((path[1], path[2], file.split('.')[0]))
+                    found_tiles.add((path[-2], path[-1], file.split('.')[0]))
 
         for z, x, y in found_tiles:
             od = self.tile_path(z, x, y)
@@ -87,6 +69,20 @@ class ElevationDEM:
             computeEdges=self.compute_edges
         ))
         log.info(f'Generated {output_file}')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--inpath', help='Location of input elevation tiles (TIF).', default='.')
+    parser.add_argument('--outpath', help='Output path for elevation tiles.', default='.')
+    parser.add_argument('--processing', help='DEM process.', default='hillshade')
+    parser.add_argument('--format', help='Download format', default='jpeg')
+
+    args = parser.parse_args()
+
+    job = ElevationDEM(in_path=args.inpath, out_path=args.outpath, processing=args.processing,
+                       out_format=args.format)
+    job.generate()
 
 
 if __name__ == '__main__':
