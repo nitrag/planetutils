@@ -62,13 +62,17 @@ class ElevationDEM:
         z, x, y = zxy
         input_file = os.path.join(self.in_path, z, x, y) + '.tif'
         output_file = os.path.join(self.out_path, z, x, y) + '.' + self.extension
-        DEMProcessing(output_file, input_file, self.processing, options=DEMProcessingOptions(
-            format=self.format,
-            zFactor=self.z_factor,
-            combined=self.combined,
-            computeEdges=self.compute_edges
-        ))
-        log.info(f'Generated {output_file}')
+        try:
+            DEMProcessing(output_file, input_file, self.processing, options=DEMProcessingOptions(
+                format=self.format,
+                zFactor=self.z_factor,
+                combined=self.combined,
+                computeEdges=self.compute_edges
+            ))
+        except Exception as exc:
+            log.error(f'Error generating {z}/{x}/{y}')
+        else:
+            log.info(f'Generated {output_file}')
 
 
 def main():
