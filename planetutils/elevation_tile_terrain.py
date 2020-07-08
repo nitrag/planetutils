@@ -2,8 +2,11 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 import argparse
+from typing import List
+
 from planetutils import log
-from osgeo.gdal import DEMProcessing, DEMProcessingOptions
+from osgeo import gdal
+from osgeo.gdal import DEMProcessing, DEMProcessingOptions, Dataset, Band
 import multiprocessing
 
 CPU_COUNT = multiprocessing.cpu_count()
@@ -14,7 +17,7 @@ class ElevationDEM:
     def __init__(self, processing='hillshade',
                  in_path='./data', out_path='./tiles',
                  out_format='JPEG', extension='jpg',
-                 z_factor=4, compute_edges=True, combined=True):
+                 z_factor=4, compute_edges=True, combined=True, filter_shading=False):
         self.processing = processing
         self.in_path = in_path
         self.out_path = out_path
@@ -23,6 +26,7 @@ class ElevationDEM:
         self.z_factor = z_factor
         self.combined = combined
         self.compute_edges = compute_edges
+        self.filter_shading = filter_shading
 
     def generate(self):
         found_tiles = set()
@@ -32,6 +36,13 @@ class ElevationDEM:
             path = root.split(os.sep)
             for file in files:
                 if '.tif' in file:
+                    if self.filter_shading:
+                        try:
+                            gtif = gdal.Open(root + os.sep + file)
+                            if gtif.GetRasterBand(1).ComputeStatistics(0)[2] < 30:
+                                continue
+                        except:
+                            pass
                     found_tiles.add((path[-2], path[-1], file.split('.')[0]))
 
         for z, x, y in found_tiles:
@@ -79,13 +90,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--inpath', help='Location of input elevation tiles (TIF).', default='.')
     parser.add_argument('--outpath', help='Output path for elevation tiles.', default='.')
+    parser.add_argument('--filter', help='Filters out tiles which would have minimal shading', action='store_true')
     parser.add_argument('--processing', help='DEM process.', default='hillshade')
     parser.add_argument('--format', help='Download format', default='jpeg')
 
     args = parser.parse_args()
 
     job = ElevationDEM(in_path=args.inpath, out_path=args.outpath, processing=args.processing,
-                       out_format=args.format)
+                       out_format=args.format, filter_shading=args.filter)
     job.generate()
 
 
