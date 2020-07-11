@@ -16,6 +16,7 @@ class ElevationDEM:
 
     def __init__(self, processing='hillshade',
                  in_path='./data', out_path='./tiles',
+                 exist_path=None, skip_existing=False,
                  out_format='JPEG', extension='jpg',
                  z_factor=4, compute_edges=True, combined=True, filter_shading=False):
         self.processing = processing
@@ -27,15 +28,17 @@ class ElevationDEM:
         self.combined = combined
         self.compute_edges = compute_edges
         self.filter_shading = filter_shading
+        self.exist_path = exist_path
+        self.skip_existing = skip_existing
 
     def generate(self):
-        found_tiles = set()
-        exists_tiles = set()
+        in_tif_tiles = set()
+        out_tiles = set()
         generate_tiles = set()
         for root, dirs, files in os.walk(self.in_path):
             path = root.split(os.sep)
             for file in files:
-                if '.tif' in file:
+                if '.tif' in file and '.xml' not in file:
                     if self.filter_shading:
                         try:
                             gtif = gdal.Open(root + os.sep + file)
@@ -43,19 +46,27 @@ class ElevationDEM:
                                 continue
                         except:
                             pass
-                    found_tiles.add((path[-2], path[-1], file.split('.')[0]))
+                    in_tif_tiles.add((path[-2], path[-1], file.split('.')[0]))
 
-        for z, x, y in found_tiles:
-            od = self.tile_path(z, x, y)
-            od[2] = od[2].replace('tif', self.extension)
-            op = os.path.join(self.out_path, *od)
-            if self.tile_exists(op):
-                exists_tiles.add((z, x, y))
-            else:
-                os.makedirs(os.path.join(self.out_path, z, x), exist_ok=True)
-                generate_tiles.add((z, x, y))
+        if self.skip_existing:
+            exist_dir = self.exist_path if self.exist_path else self.out_path
+            for root, dirs, files in os.walk(exist_dir):
+                path = root.split(os.sep)
+                for file in files:
+                    if '.jpg' in file and '.xml' not in file:
+                        out_tiles.add("%s/%s/%s" % (path[-2], path[-1], file.split('.')[0]))
 
-        log.info(f'Exist: {len(exists_tiles)} :: Remaining: {len(generate_tiles)}')
+        create_dirs = set()
+        for z, x, y in in_tif_tiles:
+            if self.skip_existing and '%s/%s/%s' % (z, x, y) in out_tiles:
+                continue
+            create_dirs.add((z, x))
+            generate_tiles.add((z, x, y))
+
+        for z, x in create_dirs:
+            os.makedirs(os.path.join(self.out_path, z, x), exist_ok=True)
+
+        log.info(f'Exist: {len(out_tiles)} :: Remaining: {len(generate_tiles)}')
         tile_arr = {(z, x, y) for z, x, y in generate_tiles}
         with multiprocessing.Pool() as pool:
             for x in pool.imap_unordered(self.terrainerize, tile_arr):
@@ -90,14 +101,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--inpath', help='Location of input elevation tiles (TIF).', default='.')
     parser.add_argument('--outpath', help='Output path for elevation tiles.', default='.')
+    parser.add_argument('--existpath', help='Different folder to check existing. Useful for processing on '
+                                            'faster drives then copying elsewhere for cold storage.', default='.')
+    parser.add_argument('--skip-existing', help='Filters out tiles which already exist', action='store_true')
     parser.add_argument('--filter', help='Filters out tiles which would have minimal shading', action='store_true')
     parser.add_argument('--processing', help='DEM process.', default='hillshade')
     parser.add_argument('--format', help='Download format', default='jpeg')
 
     args = parser.parse_args()
 
-    job = ElevationDEM(in_path=args.inpath, out_path=args.outpath, processing=args.processing,
-                       out_format=args.format, filter_shading=args.filter)
+    job = ElevationDEM(in_path=args.inpath, out_path=args.outpath,
+                       exist_path=args.existpath, skip_existing=args.skip_existing,
+                       processing=args.processing, out_format=args.format, filter_shading=args.filter)
     job.generate()
 
 
