@@ -34,7 +34,7 @@ class ElevationDEM:
 
     def generate(self):
         in_tif_tiles = set()
-        out_tiles = set()
+        exist_tiles = set()
         generate_tiles = set()
         for root, dirs, files in os.walk(self.in_path):
             path = root.split(os.sep)
@@ -51,6 +51,7 @@ class ElevationDEM:
                         except:
                             pass
                     in_tif_tiles.add((z, path[-1], file.split('.')[0]))
+        log.info(f'Total tiles: {len(in_tif_tiles)}')
 
         if self.skip_existing:
             exist_dir = self.exist_path if self.exist_path else self.out_path
@@ -58,19 +59,20 @@ class ElevationDEM:
                 path = root.split(os.sep)
                 for file in files:
                     if '.jpg' in file and '.xml' not in file:
-                        out_tiles.add("%s/%s/%s" % (path[-2], path[-1], file.split('.')[0]))
+                        exist_tiles.add("%s/%s/%s" % (path[-2], path[-1], file.split('.')[0]))
+            log.info(f'Existing tiles: {len(exist_tiles)}')
 
         create_dirs = set()
         for z, x, y in in_tif_tiles:
-            if self.skip_existing and '%s/%s/%s' % (z, x, y) in out_tiles:
+            if self.skip_existing and '%s/%s/%s' % (z, x, y) in exist_tiles:
                 continue
             create_dirs.add((z, x))
             generate_tiles.add((z, x, y))
+        log.info(f'Tiles to generate: {len(generate_tiles)}')
 
         for z, x in create_dirs:
             os.makedirs(os.path.join(self.out_path, z, x), exist_ok=True)
 
-        log.info(f'Exist: {len(out_tiles)} :: Remaining: {len(generate_tiles)}')
         tile_arr = {(z, x, y) for z, x, y in generate_tiles}
         with multiprocessing.Pool() as pool:
             for x in pool.imap_unordered(self.terrainerize, tile_arr):
