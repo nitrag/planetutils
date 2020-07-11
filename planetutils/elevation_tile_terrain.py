@@ -16,7 +16,7 @@ class ElevationDEM:
 
     def __init__(self, processing='hillshade',
                  in_path='./data', out_path='./tiles',
-                 exist_path=None, skip_existing=False,
+                 exist_path=None, skip_existing=False, zoom=None,
                  out_format='JPEG', extension='jpg',
                  z_factor=4, compute_edges=True, combined=True, filter_shading=False):
         self.processing = processing
@@ -30,6 +30,7 @@ class ElevationDEM:
         self.filter_shading = filter_shading
         self.exist_path = exist_path
         self.skip_existing = skip_existing
+        self.zoom = zoom
 
     def generate(self):
         in_tif_tiles = set()
@@ -39,6 +40,9 @@ class ElevationDEM:
             path = root.split(os.sep)
             for file in files:
                 if '.tif' in file and '.xml' not in file:
+                    z = path[-2]
+                    if self.zoom is not None and self.zoom != z:
+                        continue
                     if self.filter_shading:
                         try:
                             gtif = gdal.Open(root + os.sep + file)
@@ -46,7 +50,7 @@ class ElevationDEM:
                                 continue
                         except:
                             pass
-                    in_tif_tiles.add((path[-2], path[-1], file.split('.')[0]))
+                    in_tif_tiles.add((z, path[-1], file.split('.')[0]))
 
         if self.skip_existing:
             exist_dir = self.exist_path if self.exist_path else self.out_path
@@ -101,6 +105,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--inpath', help='Location of input elevation tiles (TIF).', default='.')
     parser.add_argument('--outpath', help='Output path for elevation tiles.', default='.')
+    parser.add_argument('--zoom', help='Only generate certain zoom', default=None)
     parser.add_argument('--existpath', help='Different folder to check existing. Useful for processing on '
                                             'faster drives then copying elsewhere for cold storage.', default='.')
     parser.add_argument('--skip-existing', help='Filters out tiles which already exist', action='store_true')
@@ -111,7 +116,7 @@ def main():
     args = parser.parse_args()
 
     job = ElevationDEM(in_path=args.inpath, out_path=args.outpath,
-                       exist_path=args.existpath, skip_existing=args.skip_existing,
+                       exist_path=args.existpath, skip_existing=args.skip_existing, zoom=args.zoom,
                        processing=args.processing, out_format=args.format, filter_shading=args.filter)
     job.generate()
 
