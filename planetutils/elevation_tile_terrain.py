@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 import argparse
+from math import floor
 from typing import List
 
 from planetutils import log
@@ -31,27 +32,33 @@ class ElevationDEM:
         self.exist_path = exist_path
         self.skip_existing = skip_existing
         self.zoom = zoom
+        os.environ['GDAL_PAM_ENABLED'] = 'NO'  # suppress xml
 
     def generate(self):
-        in_tif_tiles = set()
+        in_tiles = set()
         exist_tiles = set()
         generate_tiles = set()
+
+        pool = multiprocessing.Pool(processes=floor(multiprocessing.cpu_count() * 1.5))
+
         for root, dirs, files in os.walk(self.in_path):
             path = root.split(os.sep)
             for file in files:
                 if '.tif' in file and '.xml' not in file:
                     z = path[-2]
+                    x = path[-1]
+                    y = file.split('.')[0]
                     if self.zoom is not None and self.zoom != z:
                         continue
-                    if self.filter_shading:
-                        try:
-                            gtif = gdal.Open(root + os.sep + file)
-                            if gtif.GetRasterBand(1).ComputeStatistics(0)[2] < 30:
-                                continue
-                        except:
-                            pass
-                    in_tif_tiles.add((z, path[-1], file.split('.')[0]))
-        log.info(f'Total tiles: {len(in_tif_tiles)}')
+                    in_tiles.add((root + os.sep + file, (z, x, y)))
+        log.info(f'Total tiles: {len(in_tiles)}')
+
+        if self.filter_shading:
+            tiles_to_process = [x for x in pool.map_async(self.check_density, in_tiles).get() if x is not None]
+            log.info(f'Tiles after filter: {len(tiles_to_process)}')
+        else:
+            tiles_to_process = [slippy for _, slippy in in_tiles]
+        in_tiles.clear()
 
         if self.skip_existing:
             exist_dir = self.exist_path if self.exist_path else self.out_path
@@ -63,24 +70,31 @@ class ElevationDEM:
             log.info(f'Existing tiles: {len(exist_tiles)}')
 
         create_dirs = set()
-        for z, x, y in in_tif_tiles:
+        for z, x, y in tiles_to_process:
             if self.skip_existing and '%s/%s/%s' % (z, x, y) in exist_tiles:
                 continue
             create_dirs.add((z, x))
             generate_tiles.add((z, x, y))
         log.info(f'Tiles to generate: {len(generate_tiles)}')
+        tiles_to_process.clear()
+        exist_tiles.clear()
 
         for z, x in create_dirs:
             os.makedirs(os.path.join(self.out_path, z, x), exist_ok=True)
 
-        tile_arr = {(z, x, y) for z, x, y in generate_tiles}
-        with multiprocessing.Pool() as pool:
-            for x in pool.imap_unordered(self.terrainerize, tile_arr):
-                pass
+        for z, x, y in pool.imap_unordered(self.terrainerize, generate_tiles):
+            log.info(f'Generated {z}/{x}/{y}')
 
     @staticmethod
-    def tile_exists(op):
-        return os.path.exists(op)
+    def check_density(t):
+        file_path, slippy = t
+        try:
+            gtif = gdal.Open(file_path)
+            if gtif.GetRasterBand(1).ComputeStatistics(0)[2] < 30:
+                return None
+        except:
+            pass
+        return slippy
 
     @staticmethod
     def tile_path(z, x, y):
@@ -97,10 +111,9 @@ class ElevationDEM:
                 combined=self.combined,
                 computeEdges=self.compute_edges
             ))
+            return zxy
         except Exception as exc:
-            log.error(f'Error generating {z}/{x}/{y}')
-        else:
-            log.info(f'Generated {output_file}')
+            return zxy
 
 
 def main():
