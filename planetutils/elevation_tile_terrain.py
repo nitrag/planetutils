@@ -29,28 +29,19 @@ class ElevationDEM:
         self.combined = combined
         self.compute_edges = compute_edges
         self.filter_shading = filter_shading
-        self.exist_path = exist_path
+        self.exist_path = exist_path if exist_path else out_path
         self.skip_existing = skip_existing
         self.zoom = zoom
         os.environ['GDAL_PAM_ENABLED'] = 'NO'  # suppress xml
 
     def generate(self):
-        in_tiles = set()
-        exist_tiles = set()
-        generate_tiles = set()
+        in_tiles = []
+        exist_tiles = []
 
         pool = multiprocessing.Pool(processes=floor(multiprocessing.cpu_count() * 1.5))
 
-        for root, dirs, files in os.walk(self.in_path):
-            path = root.split(os.sep)
-            for file in files:
-                if '.tif' in file and '.xml' not in file:
-                    z = path[-2]
-                    x = path[-1]
-                    y = file.split('.')[0]
-                    if self.zoom is not None and self.zoom != z:
-                        continue
-                    in_tiles.add((root + os.sep + file, (z, x, y)))
+        in_tiles = [x for x in pool.map_async(self.gather_tiles, self.walk_dir(self.in_path)).get()
+                    for x in x]
         log.info(f'Total tiles: {len(in_tiles)}')
 
         if self.filter_shading:
@@ -58,18 +49,15 @@ class ElevationDEM:
             log.info(f'Tiles after filter: {len(tiles_to_process)}')
         else:
             tiles_to_process = [slippy for _, slippy in in_tiles]
-        in_tiles.clear()
 
         if self.skip_existing:
-            exist_dir = self.exist_path if self.exist_path else self.out_path
-            for root, dirs, files in os.walk(exist_dir):
-                path = root.split(os.sep)
-                for file in files:
-                    if '.jpg' in file and '.xml' not in file:
-                        exist_tiles.add("%s/%s/%s" % (path[-2], path[-1], file.split('.')[0]))
+            exist_tiles = [x for x in pool.map_async(self.filter_exists, self.walk_dir(self.exist_path)).get()
+                           for x in x]
             log.info(f'Existing tiles: {len(exist_tiles)}')
+        in_tiles.clear()
 
         create_dirs = set()
+        generate_tiles = set()
         for z, x, y in tiles_to_process:
             if self.skip_existing and '%s/%s/%s' % (z, x, y) in exist_tiles:
                 continue
@@ -81,9 +69,37 @@ class ElevationDEM:
 
         for z, x in create_dirs:
             os.makedirs(os.path.join(self.out_path, z, x), exist_ok=True)
+        create_dirs.clear()
 
         for z, x, y in pool.imap_unordered(self.terrainerize, generate_tiles):
             log.info(f'Generated {z}/{x}/{y}')
+
+    @staticmethod
+    def walk_dir(path):
+        return [(root, files) for root, _, files in os.walk(path) if len(files) > 0]
+
+    def gather_tiles(self, rf):
+        root, files = rf
+        path = root.split(os.sep)
+        tifs = []
+        for file in files:
+            if '.tif' in file and '.xml' not in file:
+                z = path[-2]
+                x = path[-1]
+                y = file.split('.')[0]
+                if self.zoom is not None and self.zoom != z:
+                    continue
+                tifs.append((root + os.sep + file, (z, x, y)))
+        return tifs
+
+    def filter_exists(self, rf):
+        root, files = rf
+        path = root.split(os.sep)
+        existing = []
+        for file in files:
+            if '.jpg' in file and '.xml' not in file:
+                existing.append("%s/%s/%s" % (path[-2], path[-1], file.split('.')[0]))
+        return existing
 
     @staticmethod
     def check_density(t):
