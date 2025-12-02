@@ -64,3 +64,8 @@ data
 # PyTest
 .pytest_cache/
 virtualenv
+
+#IDE
+.idea
+.vscode
+.claude
