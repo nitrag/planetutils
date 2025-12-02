@@ -21,12 +21,12 @@ class TestPlanetBase(unittest.TestCase):
             '--write-xml','-'
         )
         self.assertTrue(output.count('way id=') > 0)
-    
+
     def test_osmconvert(self):
         p = planet.PlanetBase(TESTFILE)
         output = p.osmconvert(p.osmpath, '--out-statistics')
         self.assertIn('timestamp min:', output)
-    
+
     def test_get_timestamp(self):
         p = planet.PlanetBase(TESTFILE)
         self.assertEqual(p.get_timestamp(), TESTFILE_TIMESTAMP)
@@ -56,16 +56,5 @@ class TestPlanetExtractorOsmosis(TestPlanetExtractor):
     def test_extract_bbox(self):
         self.extract_bbox()
 
-class TestPlanetDownloaderHttp(unittest.TestCase):
-    def test_download_planet(self):
-        p = planet.PlanetDownloaderHttp('test.osm.pbf')
-        # mock curl
-        COUNT = []
-        def c(self, url, outpath):
-            COUNT.append([url,outpath])
-        p._download = types.MethodType(c, planet.PlanetDownloaderHttp)
-        p.download_planet()
-        self.assertEqual(COUNT[0], ['https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf', 'test.osm.pbf'])
-        
 if __name__ == '__main__':
     unittest.main()

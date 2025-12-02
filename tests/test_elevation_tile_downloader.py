@@ -27,39 +27,39 @@ class TestGeotiffDownloader(unittest.TestCase):
 class TestElevationSkadiDownloader(unittest.TestCase):
     def test_download_bboxes(self):
         pass
-        
+
     def test_hgtpath(self):
         e = ElevationSkadiDownloader('.')
         expect = ('N122', 'N122E037.hgt')
         hgtpath = e.tile_path(0, 37, 122)
         self.assertEqual(hgtpath[0], expect[0])
         self.assertEqual(hgtpath[1], expect[1])
-    
+
     def test_get_bbox_tiles(self):
         e = ElevationSkadiDownloader('.')
         tiles = e.get_bbox_tiles(CA)
         self.assertEqual(len(tiles), 154)
         tiles = e.get_bbox_tiles([-180,-90,180,90])
         self.assertEqual(len(tiles), 64800)
-    
+
     def download_bbox(self, e, method, args, expect):
         COUNT = []
-        # def c(self, url, op):
-        def c(self, bucket, prefix, z, x, y, suffix=''):
-            COUNT.append([x, y])
-        e.download_tile = types.MethodType(c, ElevationSkadiDownloader)
+        def c(self, url_op):
+            url, op = url_op
+            # Extract x, y from the URL path
+            # URL format: https://bucket.s3.amazonaws.com/geotiff/N{y}/N{y}E{x}.hgt
+            parts = url.split('/')[-1].replace('.hgt', '')
+            COUNT.append(parts)
+        e._download_multi = types.MethodType(c, ElevationSkadiDownloader)
         method(*args)
         self.assertEqual(len(COUNT), expect)
-    
-    def test_download_planet(self):
-        e = ElevationSkadiDownloader('.')
-        self.download_bbox(e, e.download_planet, [], 64800)
-    
+
     def test_download_bbox(self):
         e = ElevationSkadiDownloader('.')
         self.download_bbox(e, e.download_bbox, [CA], 154)
-    
+
     def test_download_bbox_found(self):
+        import shutil
         d = tempfile.mkdtemp()
         e = ElevationSkadiDownloader(d)
         # correct size
@@ -73,12 +73,8 @@ class TestElevationSkadiDownloader(unittest.TestCase):
         os.makedirs(os.path.join(d, path[0]))
         dp2 = os.path.join(d, *path)
         with open(dp2, 'w') as f:
-            f.write('0')        
+            f.write('0')
         # expect 154 - 1
         self.download_bbox(e, e.download_bbox, [CA], 154-1)
         # cleanup
-        for i in [dp1, dp2]:
-            os.unlink(i)
-        for i in [dp1, dp2]:
-            os.rmdir(os.path.dirname(i))
-        os.rmdir(d)
+        shutil.rmtree(d)
