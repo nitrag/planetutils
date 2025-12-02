@@ -30,7 +30,8 @@ setup(name='interline-planetutils',
             'elevation_tile_merge=planetutils.elevation_tile_merge:main',
             'elevation_tile_terrain=planetutils.elevation_tile_terrain:main',
             'valhalla_tilepack_download=planetutils.tilepack_download:main',
-            'valhalla_tilepack_list=planetutils.tilepack_list:main'
+            'valhalla_tilepack_list=planetutils.tilepack_list:main',
+            'mbtiles_cutout=planetutils.mbtiles_cutout:main'
         ],
     },
     classifiers=[

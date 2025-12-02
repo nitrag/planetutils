@@ -18,6 +18,7 @@
   * [osm_planet_get_timestamp](#osm_planet_get_timestamp)
   * [elevation_tile_download](#elevation_tile_download)
   * [elevation_tile_merge](#elevation_tile_merge)
+  * [mbtiles_cutout](#mbtiles_cutout)
   * [valhalla_tilepack_list](#valhalla_tilepack_list)
   * [valhalla_tilepack_download](#valhalla_tilepack_download)
 - [Specifying extract extents](#specifying-extract-extents)
@@ -37,6 +38,7 @@ Python-based scripts and a Docker container to work with planet-scale geographic
 - download [OSM Extracts from Interline](https://www.interline.io/osm/extracts/) for popular cities and regions
 - download [Mapzen Terrain Tiles from AWS](https://aws.amazon.com/public-datasets/terrain/) for the planet or your bounding boxes
 - merge and resample Terrain Tiles
+- cut (delete) tiles from MBTiles databases within polygon boundaries
 - download [Valhalla Tilepacks from Interline](https://www.interline.io/valhalla/tilepacks) for the planet (subscription required)
 
 PlanetUtils is packaged for use as a:
@@ -223,6 +225,47 @@ For complete help on command-line arguments:
 
 ```sh
 elevation_tile_merge -h
+```
+
+### mbtiles_cutout
+
+Cut (delete) tiles from an [MBTiles](https://github.com/mapbox/mbtiles-spec) database that fall within specified polygon boundaries. This is useful for removing tiles from specific geographic regions, reducing file size, or creating regional subsets of tile data.
+
+(Python implementation inspired by [Mapbox's mbtiles-cutout](https://github.com/mapbox/mbtiles-cutout))
+
+To cut tiles within a GeoJSON polygon at specific zoom levels:
+
+```sh
+mbtiles_cutout --geojson=polygon.geojson --min-zoom=8 --max-zoom=12 tiles.mbtiles
+```
+
+To cut tiles within a single bounding box:
+
+```sh
+mbtiles_cutout --bbox=-122.5,37.5,-122.0,38.0 tiles.mbtiles
+```
+
+To specify multiple bounding boxes or polygons, use a [CSV file or GeoJSON file](#bounding-box):
+
+```sh
+mbtiles_cutout --csv=regions.csv tiles.mbtiles
+```
+
+To preview what would be deleted without modifying the database:
+
+```sh
+mbtiles_cutout --dry-run --geojson=polygon.geojson tiles.mbtiles
+```
+
+**Important notes:**
+- This command modifies the MBTiles database in-place. Make a backup before running!
+- Tiles are tested using their center points - tiles are deleted if their center falls within the polygon
+- The tool uses the TMS coordinate system (Y=0 at bottom) as specified in the MBTiles standard
+
+For complete help on command-line arguments:
+
+```sh
+mbtiles_cutout -h
 ```
 
 ### valhalla_tilepack_list
