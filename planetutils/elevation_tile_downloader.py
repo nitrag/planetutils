@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 from __future__ import absolute_import, unicode_literals
-
 import os
 import math
 
@@ -21,12 +20,30 @@ def makedirs(path):
         pass
 
 class ElevationDownloader(object):
+    """Downloads elevation tiles from AWS Open Data Registry's Terrain Tiles dataset.
+
+    This class handles downloading of elevation data from the Terrain Tiles dataset
+    hosted on AWS S3. The dataset is available in both US (us-east-1) and EU (eu-central-1)
+    regions through the buckets elevation-tiles-prod and elevation-tiles-prod-eu respectively.
+
+    Data source: https://registry.opendata.aws/terrain-tiles/
+    """
     zoom = 0
     timeout = Timeout(connect=3.0, read=7.0)
     http = urllib3.PoolManager(maxsize=50, timeout=timeout)
 
-    def __init__(self, outpath='.'):
+    def __init__(self, outpath='.', region='us-east-1'):
         self.outpath = outpath
+        self.region = region
+        # Map regions to buckets
+        self.region_buckets = {
+            'us-east-1': 'elevation-tiles-prod',
+            'eu-central-1': 'elevation-tiles-prod-eu'
+        }
+
+    def get_bucket_for_region(self, default_bucket):
+        """Get the appropriate bucket based on region, falling back to default"""
+        return self.region_buckets.get(self.region, default_bucket)
 
     def download_planet(self):
         self.download_bbox([-180, -90, 180, 90])
@@ -71,7 +88,16 @@ class ElevationDownloader(object):
         makedirs(os.path.join(self.outpath, *od[:-1]))
         if prefix:
             od = [prefix]+od
-        url = 'http://s3.amazonaws.com/%s/%s%s' % (bucket, '/'.join(od), suffix)
+
+        # Use the region-specific bucket if available
+        actual_bucket = self.get_bucket_for_region(bucket)
+
+        # Use virtual-hosted style URL
+        if self.region == 'us-east-1':
+            url = f'https://{actual_bucket}.s3.amazonaws.com/{"/".join(od)}{suffix}'
+        else:
+            url = f'https://{actual_bucket}.s3.{self.region}.amazonaws.com/{"/".join(od)}{suffix}'
+
         return url, op
 
     def tile_path(self, z, x, y):

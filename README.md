@@ -1,6 +1,4 @@
 [![current release version](https://img.shields.io/github/release/interline-io/planetutils.svg)](https://github.com/interline-io/planetutils/releases)
-[![Docker Hub container image build status](https://img.shields.io/docker/build/interline/planetutils.svg)](https://hub.docker.com/r/interline/planetutils/)
-[![CircleCI code test status](https://circleci.com/gh/interline-io/planetutils.svg?style=svg)](https://circleci.com/gh/interline-io/planetutils)
 
 # Interline PlanetUtils
 
@@ -56,7 +54,7 @@ PlanetUtils is a "high level" library that makes use of [Osmosis](https://wiki.o
 Make sure you have [Docker](https://www.docker.com/community-edition) installed. Then:
 
 ```sh
-docker pull interline/planetutils:release-v0.4.10
+docker pull ghcr.io/interline-io/planetutils:v0.4.14
 ```
 
 Any of the example commands below can be executed with `docker run`. It may be helpful to mount a local directory inside the container for persistence and to access output files.
@@ -64,7 +62,7 @@ Any of the example commands below can be executed with `docker run`. It may be h
 - Example of using `docker run` with the `data` directory mounted as `/data`:
 
 ```sh
-docker run --rm -v ${PWD}/data:/data -t interline/planetutils:release-v0.4.10 <command>
+docker run --rm -v ${PWD}/data:/data -t ghcr.io/interline-io/planetutils:v0.4.14 <command>
 ```
 
 ### Using Homebrew on Mac OS
@@ -193,6 +191,12 @@ To specify more than one bounding box of tiles to download, list the bounding bo
 
 ```sh
 elevation_tile_download --outpath=data/elevation --csv=data/bboxes.csv
+```
+
+By default tiles are downloaded from the AWS `us-east-1` region. To instead download from the `eu-central-1` region:
+
+```sh
+elevation_tile_download --outpath=data/elevation --region=eu-central-1
 ```
 
 For complete help on command-line arguments:
