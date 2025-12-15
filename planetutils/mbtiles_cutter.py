@@ -51,11 +51,7 @@ class MBTilesCutter(object):
         cursor = self.conn.cursor()
 
         # Check for tiles table
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='tiles'
-        """)
-
+        cursor.execute("PRAGMA table_info(tiles)")
         if not cursor.fetchone():
             raise ValueError("Not a valid MBTiles file: missing 'tiles' table")
 
