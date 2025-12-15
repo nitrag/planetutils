@@ -8,7 +8,9 @@ from .tile_math import (
     tile_center_lonlat,
     point_in_polygon,
     get_polygon_coords,
-    get_tiles_in_bbox
+    get_tiles_in_bbox,
+    lon_to_tile_x,
+    lat_to_tile_y
 )
 
 
@@ -97,7 +99,70 @@ class MBTilesCutter(object):
 
     def _process_single_feature(self, feature, min_zoom, max_zoom):
         """
-        Process a single feature and delete tiles within it.
+        Process a single feature - routes to optimized path for rectangles.
+
+        Args:
+            feature: Feature object from bbox module
+            min_zoom: minimum zoom level
+            max_zoom: maximum zoom level
+
+        Returns:
+            Number of tiles affected
+        """
+        if feature.is_rectangle():
+            log.debug("Using optimized bbox-based deletion")
+            return self._process_rectangle_feature(feature, min_zoom, max_zoom)
+        else:
+            log.debug("Using polygon-based deletion")
+            return self._process_polygon_feature(feature, min_zoom, max_zoom)
+
+    def _process_rectangle_feature(self, feature, min_zoom, max_zoom):
+        """
+        Process a rectangular feature using optimized range-based deletion.
+
+        Args:
+            feature: Feature object where is_rectangle() == True
+            min_zoom: minimum zoom level
+            max_zoom: maximum zoom level
+
+        Returns:
+            Number of tiles affected
+        """
+        # Get bbox coordinates
+        bbox = feature.bbox()
+        left, bottom, right, top = bbox
+        log.debug("Processing rectangle bbox: %s" % str(bbox))
+
+        affected = 0
+
+        # Process each zoom level
+        for zoom in range(min_zoom, max_zoom + 1):
+            log.debug("Processing zoom level %d" % zoom)
+
+            # Calculate tile coordinate ranges
+            x_min = lon_to_tile_x(left, zoom)
+            x_max = lon_to_tile_x(right, zoom)
+            y_min = lat_to_tile_y(bottom, zoom)
+            y_max = lat_to_tile_y(top, zoom)
+
+            # Safety: ensure min/max order
+            if y_min > y_max:
+                y_min, y_max = y_max, y_min
+
+            log.debug("Tile range: X[%d-%d] Y[%d-%d]" % (x_min, x_max, y_min, y_max))
+
+            # Delete tiles in range
+            count = self._delete_tiles_in_range(zoom, x_min, x_max, y_min, y_max)
+            affected += count
+
+            if count > 0:
+                log.debug("Deleted %d tiles at zoom %d" % (count, zoom))
+
+        return affected
+
+    def _process_polygon_feature(self, feature, min_zoom, max_zoom):
+        """
+        Process a single feature using polygon-based deletion.
 
         Args:
             feature: Feature object from bbox module
@@ -183,6 +248,44 @@ class MBTilesCutter(object):
             if cursor.rowcount > 0:
                 deleted += 1
 
+        log.debug("Deleted %d tiles" % deleted)
+        return deleted
+
+    def _delete_tiles_in_range(self, zoom, x_min, x_max, y_min, y_max):
+        """
+        Delete all tiles within a coordinate range using a single SQL query.
+
+        Args:
+            zoom: zoom level
+            x_min, x_max: tile_column range (inclusive)
+            y_min, y_max: tile_row range (inclusive)
+
+        Returns:
+            Number of tiles deleted
+        """
+        if self.dry_run:
+            # In dry run, count how many tiles would be deleted
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) FROM tiles
+                WHERE zoom_level = ?
+                  AND tile_column >= ? AND tile_column <= ?
+                  AND tile_row >= ? AND tile_row <= ?
+            """, (zoom, x_min, x_max, y_min, y_max))
+
+            count = cursor.fetchone()[0]
+            log.debug("DRY RUN: Would delete %d tiles" % count)
+            return count
+
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            DELETE FROM tiles
+            WHERE zoom_level = ?
+              AND tile_column >= ? AND tile_column <= ?
+              AND tile_row >= ? AND tile_row <= ?
+        """, (zoom, x_min, x_max, y_min, y_max))
+
+        deleted = cursor.rowcount
         log.debug("Deleted %d tiles" % deleted)
         return deleted
 
