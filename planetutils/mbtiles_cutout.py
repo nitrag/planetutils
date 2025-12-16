@@ -16,32 +16,32 @@ def main():
 
     # Required: MBTiles file
     parser.add_argument('mbtiles_file',
-                       help='Path to MBTiles file to modify')
+                        help='Path to MBTiles file to modify')
 
     # Shape input (one required)
     shape_group = parser.add_mutually_exclusive_group(required=True)
     shape_group.add_argument('--geojson',
-                            help='GeoJSON file with polygon(s) or bbox(es)')
+                             help='GeoJSON file with polygon(s) or bbox(es)')
     shape_group.add_argument('--csv',
-                            help='CSV file with bounding box(es). Format: name,left,bottom,right,top')
+                             help='CSV file with bounding box(es). Format: name,left,bottom,right,top')
     shape_group.add_argument('--bbox',
-                            help='Single bounding box: left,bottom,right,top')
+                             help='Single bounding box: left,bottom,right,top')
 
     # Zoom levels
     parser.add_argument('--min-zoom', type=int, default=0,
-                       help='Minimum zoom level (inclusive, default: 0)')
+                        help='Minimum zoom level (inclusive, default: 0)')
     parser.add_argument('--max-zoom', type=int, default=22,
-                       help='Maximum zoom level (inclusive, default: 22)')
+                        help='Maximum zoom level (inclusive, default: 22)')
 
     # Performance
     parser.add_argument('--batch-size', type=int, default=1000,
-                       help='Number of tiles to process per batch (default: 1000)')
+                        help='Number of tiles to process per batch (default: 1000)')
 
     # Standard flags
     parser.add_argument('--verbose', action='store_true',
-                       help='Verbose output')
+                        help='Verbose output')
     parser.add_argument('--dry-run', action='store_true',
-                       help='Show what would be done without modifying the database')
+                        help='Show what would be done without modifying the database')
 
     args = parser.parse_args()
 

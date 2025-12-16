@@ -89,9 +89,10 @@ class MBTilesCutter(object):
 
         # Check if tiles is a view
         cursor.execute("""
-            SELECT type FROM sqlite_master
-            WHERE name = 'tiles'
-        """)
+                       SELECT type
+                       FROM sqlite_master
+                       WHERE name = 'tiles'
+                       """)
         result = cursor.fetchone()
 
         if result and result[0] == 'view':
@@ -281,7 +282,7 @@ class MBTilesCutter(object):
 
             if tiles_to_delete:
                 log.debug("Found %d tiles inside polygon at zoom %d" %
-                         (len(tiles_to_delete), zoom))
+                          (len(tiles_to_delete), zoom))
 
                 # Delete in batches
                 for i in range(0, len(tiles_to_delete), self.batch_size):
