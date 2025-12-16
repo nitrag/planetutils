@@ -18,10 +18,13 @@ class MBTilesCutter(object):
     """
     Cut (delete) tiles from MBTiles database within polygon boundaries.
 
-    MBTiles format:
-    - SQLite database with 'tiles' table
-    - Columns: zoom_level (int), tile_column (int), tile_row (int), tile_data (blob)
-    - Coordinates are in TMS format (Y from bottom)
+    Supports both MBTiles schema types:
+    - Denormalized: 'tiles' table stores all data directly
+    - Normalized: coordinate table (map/tiles_shallow) + blob table (images/tiles_data)
+      with 'tiles' view joining them
+
+    Coordinates are in TMS format (Y from bottom).
+    For normalized schemas, automatically cleans up orphaned tile blobs.
     """
 
     def __init__(self, mbtiles_path, batch_size=1000, dry_run=False):
@@ -48,16 +51,22 @@ class MBTilesCutter(object):
         # Validate it's an MBTiles file
         self._validate_mbtiles()
 
+        # Detect schema type and set appropriate table names
+        # Sets: self.tile_table_name, self.blob_table_name, self.fk_column
+        self._detect_schema_type()
+
+        log.debug("Using table '%s' for tile operations" % self.tile_table_name)
+
     def _validate_mbtiles(self):
         """Validate that this is a valid MBTiles database."""
         cursor = self.conn.cursor()
 
-        # Check for tiles table
+        # Check for tiles table or view
         cursor.execute("PRAGMA table_info(tiles)")
         if not cursor.fetchone():
-            raise ValueError("Not a valid MBTiles file: missing 'tiles' table")
+            raise ValueError("Not a valid MBTiles file: missing 'tiles' table/view")
 
-        # Check schema
+        # Check schema - tiles must have required columns
         cursor.execute("PRAGMA table_info(tiles)")
         columns = {row[1] for row in cursor.fetchall()}
         required = {'zoom_level', 'tile_column', 'tile_row', 'tile_data'}
@@ -66,6 +75,58 @@ class MBTilesCutter(object):
             raise ValueError("Invalid MBTiles schema: missing required columns")
 
         log.debug("MBTiles validation successful")
+
+    def _detect_schema_type(self):
+        """
+        Detect schema type and set appropriate table names.
+
+        Sets:
+            self.tile_table_name: Table to DELETE from (tiles/map/tiles_shallow)
+            self.blob_table_name: Table with tile blobs (None/images/tiles_data)
+            self.fk_column: Foreign key column name (None/tile_id/tile_data_id)
+        """
+        cursor = self.conn.cursor()
+
+        # Check if tiles is a view
+        cursor.execute("""
+            SELECT type FROM sqlite_master
+            WHERE name = 'tiles'
+        """)
+        result = cursor.fetchone()
+
+        if result and result[0] == 'view':
+            # Normalized schema detected
+            log.debug("Detected normalized schema (tiles is a view)")
+
+            # Check for map/images convention
+            cursor.execute("SELECT name FROM sqlite_master WHERE name = 'map'")
+            if cursor.fetchone():
+                self.tile_table_name = 'map'
+                self.blob_table_name = 'images'
+                self.fk_column = 'tile_id'
+                log.debug("Using map/images convention")
+                return
+
+            # Check for tiles_shallow/tiles_data convention
+            cursor.execute("SELECT name FROM sqlite_master WHERE name = 'tiles_shallow'")
+            if cursor.fetchone():
+                self.tile_table_name = 'tiles_shallow'
+                self.blob_table_name = 'tiles_data'
+                self.fk_column = 'tile_data_id'
+                log.debug("Using tiles_shallow/tiles_data convention")
+                return
+
+            raise ValueError(
+                "Normalized schema detected (tiles is a view) but could not find:\n"
+                "  - map/images tables, or\n"
+                "  - tiles_shallow/tiles_data tables"
+            )
+        else:
+            # Denormalized schema: tiles is a real table
+            log.debug("Detected denormalized schema (tiles table)")
+            self.tile_table_name = 'tiles'
+            self.blob_table_name = None
+            self.fk_column = None
 
     def process_features(self, features, min_zoom, max_zoom):
         """
@@ -92,8 +153,19 @@ class MBTilesCutter(object):
         if not self.dry_run and total_affected > 0:
             self.conn.commit()
             log.info("Changes committed to database")
+
+            # Clean up orphaned images in normalized schema
+            orphaned = self._cleanup_orphaned_images()
+            if orphaned > 0:
+                self.conn.commit()
+                log.info("Cleaned up %d orphaned images" % orphaned)
         elif self.dry_run:
             log.info("DRY RUN: No changes made to database")
+
+            # Preview orphan cleanup for normalized schema
+            orphaned = self._cleanup_orphaned_images()
+            if orphaned > 0:
+                log.info("DRY RUN: Would clean up %d orphaned images" % orphaned)
 
         return total_affected
 
@@ -241,9 +313,9 @@ class MBTilesCutter(object):
         deleted = 0
         for z, x, y in tiles:
             cursor.execute("""
-                DELETE FROM tiles
+                DELETE FROM %s
                 WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?
-            """, (z, x, y))
+            """ % self.tile_table_name, (z, x, y))
 
             if cursor.rowcount > 0:
                 deleted += 1
@@ -267,11 +339,11 @@ class MBTilesCutter(object):
             # In dry run, count how many tiles would be deleted
             cursor = self.conn.cursor()
             cursor.execute("""
-                SELECT COUNT(*) FROM tiles
+                SELECT COUNT(*) FROM %s
                 WHERE zoom_level = ?
                   AND tile_column >= ? AND tile_column <= ?
                   AND tile_row >= ? AND tile_row <= ?
-            """, (zoom, x_min, x_max, y_min, y_max))
+            """ % self.tile_table_name, (zoom, x_min, x_max, y_min, y_max))
 
             count = cursor.fetchone()[0]
             log.debug("DRY RUN: Would delete %d tiles" % count)
@@ -279,14 +351,47 @@ class MBTilesCutter(object):
 
         cursor = self.conn.cursor()
         cursor.execute("""
-            DELETE FROM tiles
+            DELETE FROM %s
             WHERE zoom_level = ?
               AND tile_column >= ? AND tile_column <= ?
               AND tile_row >= ? AND tile_row <= ?
-        """, (zoom, x_min, x_max, y_min, y_max))
+        """ % self.tile_table_name, (zoom, x_min, x_max, y_min, y_max))
 
         deleted = cursor.rowcount
         log.debug("Deleted %d tiles" % deleted)
+        return deleted
+
+    def _cleanup_orphaned_images(self):
+        """Clean up orphaned blobs after deleting from coordinate table."""
+        if self.blob_table_name is None:
+            return 0  # Only needed for normalized schema
+
+        if self.dry_run:
+            cursor = self.conn.cursor()
+            # Dynamic query based on detected schema
+            query = """
+                SELECT COUNT(*)
+                FROM %s
+                WHERE %s NOT IN (SELECT DISTINCT %s FROM %s)
+            """ % (self.blob_table_name, self.fk_column, self.fk_column, self.tile_table_name)
+
+            cursor.execute(query)
+            count = cursor.fetchone()[0]
+            log.debug("DRY RUN: Would delete %d orphaned blobs from %s" % (count, self.blob_table_name))
+            return count
+
+        cursor = self.conn.cursor()
+        # Dynamic query based on detected schema
+        query = """
+            DELETE FROM %s
+            WHERE %s NOT IN (SELECT DISTINCT %s FROM %s)
+        """ % (self.blob_table_name, self.fk_column, self.fk_column, self.tile_table_name)
+
+        cursor.execute(query)
+        deleted = cursor.rowcount
+
+        if deleted > 0:
+            log.debug("Cleaned up %d orphaned blobs from %s" % (deleted, self.blob_table_name))
         return deleted
 
     def get_tile_count(self):
