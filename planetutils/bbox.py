@@ -55,12 +55,20 @@ class Feature(object):
 
 def validate_bbox(bbox):
     left, bottom, right, top = map(float, bbox)
-    assert -180 <= left <= 180
-    assert -180 <= right <= 180
-    assert -90 <= bottom <= 90
-    assert -90 <= top <= 90
-    assert top >= bottom
-    assert right >= left
+    assert -180 <= left <= 180, (
+        "left longitude %s is out of range [-180, 180]; "
+        "antimeridian-crossing geometries are not supported" % left)
+    assert -180 <= right <= 180, (
+        "right longitude %s is out of range [-180, 180]; "
+        "antimeridian-crossing geometries are not supported" % right)
+    assert -90 <= bottom <= 90, (
+        "bottom latitude %s is out of range [-90, 90]" % bottom)
+    assert -90 <= top <= 90, (
+        "top latitude %s is out of range [-90, 90]" % top)
+    assert top >= bottom, (
+        "top latitude %s must be >= bottom latitude %s" % (top, bottom))
+    assert right >= left, (
+        "right longitude %s must be >= left longitude %s" % (right, left))
     return [left, bottom, right, top]
 
 def load_feature_string(bbox):
